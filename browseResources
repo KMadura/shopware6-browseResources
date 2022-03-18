@@ -1,0 +1,728 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * Author: Krzysztof Madura
+ * License: MIT
+ * 2022
+ */
+
+//
+// Initial logic
+//
+
+$br = new browseResources();
+
+// upload arguments as script settings
+$br->importSettings($argv);
+
+// check if help page needs to be printed
+$settings = $br->getSettings();
+if ($settings->isHelpPage()) {
+    $br->printHelpPage();
+    exit(0);
+}
+
+// exit with error code when settings are invalid
+if (!$br->validateSettings()) {
+    exit(1);
+}
+
+// check if regex string is valid
+if ($settings->isRegexp() && !$br->validateRegex($settings->getInputText())) {
+    $br->printStdErr("Regex string is invalid: " . $settings->getInputText());
+    exit(1);
+}
+
+// locate PHPStorm
+if ($settings->getEditor() === br_settings::EDITOR_PHPSTORM) {
+    $br->locatePHPStorm();
+}
+
+// print out any settings
+if ($settings->isVerbose()) {
+    $br->printMoreInfo();
+}
+
+//
+// Main logic
+//
+
+if (!$br->checkAndSetBaseDirectory()) {
+    $br->printStdErr(
+        "Could not find /vendor/shopware/platform/src/ directory\nAre you sure this script is executed in right location?"
+    );
+    exit(1);
+}
+
+if ($settings->isAdministration()) {
+    $br->listAllFiles(browseResources::DIRECTORY_A);
+}
+
+if ($settings->isStorefront()) {
+    $br->listAllFiles(browseResources::DIRECTORY_S);
+}
+
+$files = $br->getAllFilesOfAType();
+$selectedFiles = [];
+
+// Apply limits to directories names
+foreach ($files as $key => $file) {
+    if ($br->checkFileNameLimits($file)) {
+        unset($files[$key]);
+    }
+}
+
+// Loop through all those files with applied parameters
+if ($settings->isRegexp()) {
+    if($settings->isIndexJsMode()) {
+        foreach($files as $file) {
+            if ($br->checkRegexInAFile($file)) {
+                $selectedFiles[] = $br->locateIndexJS($file);
+            }
+        }
+    } else {
+        foreach($files as $file) {
+            if ($br->checkRegexInAFile($file)) {
+                $selectedFiles[] = $file;
+            }
+        }
+    }
+} else {
+    if($settings->isIndexJsMode()) {
+        foreach($files as $file) {
+            if ($br->checkSubStringInAFile($file)) {
+                $selectedFiles[] = $br->locateIndexJS($file);
+            }
+        }
+    } else {
+        foreach($files as $file) {
+            if ($br->checkSubStringInAFile($file)) {
+                $selectedFiles[] = $file;
+            }
+        }
+    }
+}
+
+$br->removeDuplicatesAndNullValues($selectedFiles);
+
+//
+// Open selected files in an editor
+//
+
+// Default editor
+if ($settings->getEditor() === br_settings::EDITOR_DEFAULT) {
+    foreach ($selectedFiles as $selectedFile) {
+        $br->printOutFile($selectedFile);
+        $br->openUsingDefaultEditor($selectedFile);
+    }
+// PHPStorm
+} elseif ($settings->getEditor() === br_settings::EDITOR_PHPSTORM) {
+    foreach ($selectedFiles as $selectedFile) {
+        $br->printOutFile($selectedFile);
+        $br->openUsingPHPStormEditor($selectedFile);
+    }
+
+//
+// Only print out selected files
+//
+
+} else {
+    foreach ($selectedFiles as $selectedFile) {
+        if($selectedFile === null) continue;
+        $br->printOutFile($selectedFile);
+    }
+}
+
+//
+// Classes
+//
+
+class br_settings
+{
+    const EDITOR_NONE = 0;
+    const EDITOR_DEFAULT = 1;
+    const EDITOR_PHPSTORM = 2;
+
+    private bool $administration = false;
+    private bool $storefront = false;
+    private bool $helpPage = false;
+    private ?string $fileType = null;
+    private ?string $fileExtension = null;
+    private ?string $inputText = null;
+    private bool $regexp = false;
+    private bool $verbose = false;
+    private int $editor = 0;
+    private ?string $limitKeep = null;
+    private ?string $limitDrop = null;
+    private bool $indexJsMode = false;
+
+    public function isAdministration(): bool
+    {
+        return $this->administration;
+    }
+
+    public function setAdministration(bool $administration = true): void
+    {
+        $this->administration = $administration;
+    }
+
+    public function isStorefront(): bool
+    {
+        return $this->storefront;
+    }
+
+    public function setStorefront(bool $storefront = true): void
+    {
+        $this->storefront = $storefront;
+    }
+
+    public function isHelpPage(): bool
+    {
+        return $this->helpPage;
+    }
+
+    public function setHelpPage(bool $helpPage = true): void
+    {
+        $this->helpPage = $helpPage;
+    }
+
+    public function getFileType(): ?string
+    {
+        return $this->fileType;
+    }
+
+    public function setFileType(?string $fileType): void
+    {
+        $this->fileType = $fileType;
+    }
+
+    public function getFileExtension(): ?string
+    {
+        return $this->fileExtension;
+    }
+
+    public function setFileExtension(?string $fileExtension): void
+    {
+        $this->fileExtension = $fileExtension;
+    }
+
+    public function getInputText(): ?string
+    {
+        return $this->inputText;
+    }
+
+    public function setInputText(?string $inputText): void
+    {
+        $this->inputText = $inputText;
+    }
+
+    public function isRegexp(): bool
+    {
+        return $this->regexp;
+    }
+
+    public function setRegexp(bool $regexp = true): void
+    {
+        $this->regexp = $regexp;
+    }
+
+    public function isVerbose(): bool
+    {
+        return $this->verbose;
+    }
+
+    public function setVerbose(bool $verbose = true): void
+    {
+        $this->verbose = $verbose;
+    }
+
+    public function getEditor(): int
+    {
+        return $this->editor;
+    }
+
+    public function setEditor(int $editor): void
+    {
+        $this->editor = $editor;
+    }
+
+    public function getLimitKeep(): ?string
+    {
+        return $this->limitKeep;
+    }
+
+    public function setLimitKeep(?string $limitKeep): void
+    {
+        $this->limitKeep = $limitKeep;
+    }
+
+    public function getLimitDrop(): ?string
+    {
+        return $this->limitDrop;
+    }
+
+    public function setLimitDrop(?string $limitDrop): void
+    {
+        $this->limitDrop = $limitDrop;
+    }
+
+    public function isIndexJsMode(): bool
+    {
+        return $this->indexJsMode;
+    }
+
+    public function setIndexJsMode(bool $indexJsMode = true): void
+    {
+        $this->indexJsMode = $indexJsMode;
+    }
+}
+
+class browseResources
+{
+    const DIRECTORY_A = 'Administration';
+    const DIRECTORY_S = 'Storefront';
+
+    private br_settings $settings;
+    private string $baseDirectory = '';
+    private array $allFilesOfAType = [];
+    private string $currentExtension = '';
+    private int $currentExtensionLength = 0;
+    private string $locatedPHPStorm = '';
+    private string $lastIndexJsLocation = '';
+
+    public function __construct()
+    {
+        $this->settings = new br_settings();
+    }
+
+    public function getSettings(): br_settings
+    {
+        return $this->settings;
+    }
+
+    public function importSettings($argv): void
+    {
+        unset($argv[0]);
+
+        if (empty($argv)) {
+            $this->settings->setHelpPage();
+        }
+
+        foreach ($argv as $key => $value) {
+            switch ($value) {
+                case '-a':
+                case '--administration':
+                    $this->settings->setAdministration();
+                    break;
+                case '-s':
+                case '--storefront':
+                    $this->settings->setStorefront();
+                    break;
+                case '-t':
+                case '--type':
+                    if (!empty($argv[$key + 1])) {
+                        list($type, $ext) = $this->validateFileType($argv[$key + 1]);
+                        $this->settings->setFileType($type);
+                        $this->settings->setFileExtension($ext);
+                    }
+                    break;
+                case '-r':
+                case '--regexp':
+                    $this->settings->setRegexp();
+                    break;
+                case '-v':
+                case '--verbose':
+                    $this->settings->setVerbose();
+                    break;
+                case '-i':
+                case '--input':
+                    if (!empty($argv[$key + 1])) {
+                        $this->settings->setInputText($argv[$key + 1]);
+                    }
+                    break;
+                case '-js':
+                case '--javascript':
+                    $this->settings->setIndexJsMode();
+                    break;
+                case '-lk':
+                case '--keep':
+                    if (!empty($argv[$key + 1])) {
+                        $this->settings->setLimitKeep($argv[$key + 1]);
+                    }
+                    break;
+                case '-ld':
+                case '--drop':
+                    if (!empty($argv[$key + 1])) {
+                        $this->settings->setLimitDrop($argv[$key + 1]);
+                    }
+                    break;
+                case '-o':
+                case '--open':
+                    $this->settings->setEditor(br_settings::EDITOR_DEFAULT);
+                    break;
+                case '-p':
+                case '--phpstorm':
+                    $this->settings->setEditor(br_settings::EDITOR_PHPSTORM);
+                    break;
+                case '-h':
+                case '--help':
+                    $this->settings->setHelpPage();
+                    break;
+            }
+        }
+    }
+
+    private function validateFileType(string $type): array
+    {
+        $allowed_types = [
+            'twig' => '.html.twig',
+            'js' => '.js',
+            'xml' => '.xml',
+            'json' => '.json',
+            'css' => '.xss',
+            'scss' => '.scss',
+            'html' => '.html',
+            'php' => '.php'
+        ];
+
+        if (isset($allowed_types[$type])) {
+            return [$type, $allowed_types[$type]];
+        }
+
+        return [null, null];
+    }
+
+    public function printHelpPage(): void
+    {
+        $this->printStdOut("Usage");
+        $this->printStdOut(" -h --help : help page");
+        $this->printStdOut(" -a --administration : check in Administration directory");
+        $this->printStdOut(" -i --input {value} : input text or perl regex query");
+        $this->printStdOut(" -js --javascript : list only index.js files in those directories");
+        $this->printStdOut(" -lk --limitkeep {value} : show files with this substring in it's directory");
+        $this->printStdOut(" -ld --limitdrop {value} : hide files with this substring in it's directory");
+        $this->printStdOut(" -o --open : open multiple files in a default editor *");
+        $this->printStdOut(" -p --phpstorm : open multiple files using phpstorm *");
+        $this->printStdOut(" -r --regexp : treat input as regex query");
+        $this->printStdOut(" -s --storefront : check in Storefront directory");
+        $this->printStdOut(" -t --type {value} : twig, js, json, xml, php, html, css, scss");
+        $this->printStdOut(" -v --verbose : print out more information");
+        $this->printStdOut("\n* These arguments may not work from within docker container");
+    }
+
+    public function validateSettings(?br_settings $settings = null): bool
+    {
+        // use internally stored settings
+        if ($settings === null) {
+            $settings = $this->settings;
+        }
+
+        if (!$settings->isAdministration() && !$settings->isStorefront()) {
+            $this->printStdErr("Missing -a or -s parameters");
+            return false;
+        }
+
+        if (empty($settings->getFileType()) || empty($settings->getFileExtension())) {
+            $this->printStdErr("Please set correct file type to look for");
+            return false;
+        }
+
+        if (empty($settings->getInputText())) {
+            $this->printStdErr("Please specify input text or perl regex query");
+            return false;
+        }
+
+        return true;
+    }
+
+    public function checkAndSetBaseDirectory(): bool
+    {
+        // checking current working directory
+        $this->baseDirectory = getcwd() . '/vendor/shopware/platform/src';
+        if (file_exists($this->baseDirectory)) {
+            return true;
+        }
+
+        // checking file directory
+        $this->baseDirectory = __DIR__ . '/vendor/shopware/platform/src';
+        if (file_exists($this->baseDirectory)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    public function getBaseDirectory(): string
+    {
+        return $this->baseDirectory;
+    }
+
+    public function printStdErr(string $string): void
+    {
+        fwrite(STDERR, "Error: $string\n");
+    }
+
+    public function printStdOut(string $string): void
+    {
+        fwrite(STDOUT, $string . "\n");
+    }
+
+    public function clearListedFiles(): void
+    {
+        $this->allFilesOfAType = [];
+    }
+
+    public function listAllFiles(string $mainDirectory): void
+    {
+        $currentDirectory = $this->baseDirectory . '/' . $mainDirectory;
+        if (!file_exists($currentDirectory)) {
+            $this->printStdErr("Directory does not exist: $currentDirectory");
+            exit(1);
+        }
+
+        $this->currentExtension = $this->settings->getFileExtension();
+        $this->currentExtensionLength = strlen($this->currentExtension);
+
+        $this->recursiveDirectoryWalker($currentDirectory);
+    }
+
+    private function recursiveDirectoryWalker(string $currentDirectory, int $depth = 50): void
+    {
+        $depth--;
+        if ($depth <= 0) {
+            $this->printStdErr("Warning! Too much recursion");
+            return;
+        }
+
+        foreach (scandir($currentDirectory) as $dirOrFile) {
+            if (strlen($dirOrFile) < 3) {
+                continue;
+            }
+
+            $tempDirectoryString = $currentDirectory . '/' . $dirOrFile;
+
+            if (is_link($tempDirectoryString)) {
+                // Ignore symbolic links completely
+                continue;
+            }
+
+            if (is_file($tempDirectoryString)) {
+                $this->checkThisFileExtensionAndSaveIt($tempDirectoryString);
+                continue;
+            }
+
+            if (is_dir($tempDirectoryString)) {
+                $this->recursiveDirectoryWalker($tempDirectoryString, $depth);
+            }
+        }
+    }
+
+    private function checkThisFileExtensionAndSaveIt(string $directory): void
+    {
+        if (strcmp($this->currentExtension, substr($directory, -($this->currentExtensionLength))) === 0) {
+            $this->allFilesOfAType[] = $directory;
+        }
+    }
+
+    public function locateIndexJS(string $location): ?string
+    {
+        $location = preg_replace('/[^\/]+$/', '', $location);
+        if (file_exists($location . 'index.js')) {
+            return $location . 'index.js';
+        }
+        return null;
+    }
+
+    public function getAllFilesOfAType(): array
+    {
+        return $this->allFilesOfAType;
+    }
+
+    public function checkSubStringInAFile(string $file): bool
+    {
+        if (!file_exists($file)) {
+            $this->printStdErr("Could not find a file: $file");
+            exit(1);
+        }
+
+        $f = fopen($file, 'r');
+        $strLenOfString = strlen($this->settings->getInputText());
+
+        while ($line = fgets($f)) {
+            if (strlen($line) < $strLenOfString) {
+                continue;
+            }
+
+            if (strpos($line, $this->settings->getInputText()) !== false) {
+                fclose($f);
+                return true;
+            }
+        }
+
+        fclose($f);
+        return false;
+    }
+
+    public function checkRegexInAFile(string $file): bool
+    {
+        if (!file_exists($file)) {
+            $this->printStdErr("Could not find a file: $file");
+            exit(1);
+        }
+
+        $f = fopen($file, 'r');
+
+        while ($line = fgets($f)) {
+            $line = str_replace("\n", '', $line);
+
+            if (preg_match($this->settings->getInputText(), $line)) {
+                fclose($f);
+                return true;
+            }
+        }
+
+        fclose($f);
+        return false;
+    }
+
+    public function validateRegex(string $regex): bool
+    {
+        // preg_match will return false if regex string is broken
+        // no need to check against any subject, @ needs to be to suppress any errors
+        return !(@preg_match($regex, '') === false);
+    }
+
+    public function openUsingDefaultEditor(string $file): void
+    {
+        @exec('nohup open "' . $file . '" > /dev/null 2>&1 &');
+    }
+
+    public function openUsingPHPStormEditor(string $file): void
+    {
+        @exec('nohup ' . $this->locatedPHPStorm . ' "' . $file . '" > /dev/null 2>&1 &');
+    }
+
+    public function locatePHPStorm(): void
+    {
+        // Look for existing settings
+        if (file_exists(__DIR__ . '/.browseResourcesPhpStormDir')) {
+            $this->locatedPHPStorm = trim(file_get_contents(__DIR__ . '/.browseResourcesPhpStormDir'));
+
+            if (file_exists($this->locatedPHPStorm)) {
+                return;
+            }
+        }
+
+        // Look for locate command
+        if (file_exists('/usr/bin/locate')) {
+            $this->locatedPHPStorm = trim(shell_exec('locate bin/phpstorm.sh --wholename') ?? '');
+
+            if (!empty($this->locatedPHPStorm) && file_exists($this->locatedPHPStorm)) {
+                $this->saveLocatedPHPStorm();
+                return;
+            }
+        }
+
+        // Look for update-alternatives
+        if (file_exists('/usr/bin/update-alternatives')) {
+            $this->locatedPHPStorm = trim(
+                shell_exec('update-alternatives --list editor | grep phpstorm | head -1') ?? ''
+            );
+
+            if (!empty($this->locatedPHPStorm) && file_exists($this->locatedPHPStorm)) {
+                $this->saveLocatedPHPStorm();
+                return;
+            }
+        }
+
+        // Maybe it is running right now?
+        if (file_exists('/usr/bin/ps') && file_exists('/usr/bin/awk')) {
+            $this->locatedPHPStorm = trim(
+                shell_exec('ps aux | grep bin/phpstorm.sh | grep -v grep | head -1 | awk \'{print $NF}\'') ?? ''
+            );
+
+            if (!empty($this->locatedPHPStorm) && file_exists($this->locatedPHPStorm)) {
+                $this->saveLocatedPHPStorm();
+                return;
+            }
+        }
+
+        $this->printStdErr(
+            "Could not locate PHPStorm.\nPlease create or edit .browseResourcesPhpStormDir in script's directory with complete path to phpstorm.sh file."
+        );
+        exit(1);
+    }
+
+    private function saveLocatedPHPStorm(): void
+    {
+        @file_put_contents(__DIR__ . '/.browseResourcesPhpStormDir', $this->locatedPHPStorm);
+    }
+
+    public function printOutFile($selectedFile): void
+    {
+        $this->printStdOut(preg_replace('/^.+?(?=\/src)/', '', $selectedFile));
+    }
+
+    public function printMoreInfo(): void
+    {
+        $this->printStdOut("Check Administration: " . ($this->settings->isAdministration() ? 'yes' : 'no'));
+        $this->printStdOut("Check Storefront: " . ($this->settings->isStorefront() ? 'yes' : 'no'));
+        $this->printStdOut("File type: " . $this->settings->getFileType());
+        $this->printStdOut("File extension: " . $this->settings->getFileExtension());
+        $this->printStdOut("Input text: " . $this->settings->getInputText());
+        $this->printStdOut("Input type: " . ($this->settings->isRegexp() ? 'regexp' : 'string'));
+        $this->printStdOut("File directory - keep: " . ($this->settings->getLimitKeep() ?: 'none'));
+        $this->printStdOut("File directory - drop: " . ($this->settings->getLimitDrop() ?: 'none'));
+        switch ($this->settings->getEditor()) {
+            case br_settings::EDITOR_NONE;
+                $this->printStdOut("Open editor: disabled");
+                break;
+            case br_settings::EDITOR_DEFAULT;
+                $this->printStdOut("Open editor: default");
+                break;
+            case br_settings::EDITOR_PHPSTORM;
+                $this->printStdOut("Open editor: phpstorm");
+        }
+        $this->printStdOut("PHP Version: " . phpversion());
+    }
+
+    public function checkFileNameLimits(string $file): bool
+    {
+        if ($this->settings->getLimitKeep() !== null) {
+            if (!(strpos($file, $this->settings->getLimitKeep()) !== false)) {
+                return true;
+            }
+        }
+
+        if ($this->settings->getLimitDrop() !== null) {
+            if (strpos($file, $this->settings->getLimitDrop()) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function removeDuplicatesAndNullValues(array &$array): void
+    {
+        $previousValue = '';
+
+        foreach($array as $key => $value) {
+            if ($value === null) {
+                unset($array[$key]);
+                continue;
+            }
+
+            if (strcmp($value, $previousValue) === 0) {
+                unset($array[$key]);
+            }
+
+            $previousValue = $value;
+        }
+    }
+}
+
+exit(0);
