@@ -176,20 +176,16 @@ if ($options->isOption('js')) {
     }
 }
 
-//
 // Search Engine: Look up for files
-//
 
-foreach ([searchEngine::DIRECTORY_A, searchEngine::DIRECTORY_S, searchEngine::DIRECTORY_C] as $directory) {
+foreach ($directoriesToLookFor as $directory) {
     if ($verbose) {
         output::stdOut("Looking for $directory");
     }
     $searchEngine->browseFiles($directory);
 }
 
-//
 // Search Engine: Return results
-//
 
 $result = $searchEngine->result();
 
