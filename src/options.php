@@ -111,7 +111,7 @@ class options
             }
 
             $nextParam = $option->requestedValue === self::VALUE_REQUIRED ? "(param) " : '';
-            $textBufferLine = "  -$option->shortName, --{$option->longName} $nextParam";
+            $textBufferLine = "  -{$option->shortName}, --{$option->longName} $nextParam";
 
             $currentLineWidth = strlen($textBufferLine);
             if ($maxLineWidth < $currentLineWidth) {
