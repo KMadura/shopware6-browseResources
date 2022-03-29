@@ -26,7 +26,7 @@ class openEditor
         if (empty($this->locatedPHPStorm)) {
             return;
         }
-        @exec('nohup ' . $this->locatedPHPStorm . ' "' . $file . '" > /dev/null 2>&1 &');
+        @exec('nohup ' . tools::addSlashes($this->locatedPHPStorm) . ' "' . $file . '" > /dev/null 2>&1 &');
     }
 
     public function locatePHPStorm(): bool

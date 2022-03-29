@@ -52,4 +52,9 @@ class tools
     {
         return file_exists('/.dockerenv');
     }
+
+    public static function addSlashes(string $input): string
+    {
+        return str_replace(' ', '\ ', $input);
+    }
 }
