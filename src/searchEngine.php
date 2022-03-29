@@ -155,6 +155,7 @@ class searchEngine
                 if ($this->isAllowedExtension($tempDirectoryString)) {
                     $this->foundFiles[] = $tempDirectoryString;
                 }
+                continue;
             }
 
             if (is_dir($tempDirectoryString)) {
