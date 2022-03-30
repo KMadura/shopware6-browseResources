@@ -22,7 +22,7 @@ class searchEngine
         'js' => '.js',
         'xml' => '.xml',
         'json' => '.json',
-        'css' => '.xss',
+        'css' => '.css',
         'scss' => '.scss',
         'html' => '.html',
         'php' => '.php'
